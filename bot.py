@@ -4,7 +4,7 @@ from collections import Counter
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
 load_dotenv()
 
@@ -28,7 +28,7 @@ STATE = {}
 class GameSession:
     def __init__(self, chat_id):
         self.chat_id = chat_id
-        self.players = {}  # user_id -> {"name": ..., "username": ...}
+        self.players = {}
         self.started = False
         self.spy_id = None
         self.civilian_word = None
@@ -102,9 +102,9 @@ def get_session(chat_id):
     return STATE[chat_id]
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    await update.message.reply_text(
+    update.message.reply_text(
         f"Halo {user.first_name}!\n"
         "Bot Who's the Spy siap membantu permainan di grup ini.\n\n"
         "Perintah:\n"
@@ -117,93 +117,93 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def new_game(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     STATE[chat_id] = GameSession(chat_id)
-    await update.message.reply_text("Game baru dibuat. Semua pemain silakan ketik /join")
+    update.message.reply_text("Game baru dibuat. Semua pemain silakan ketik /join")
 
 
-async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def join_game(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     session = get_session(chat_id)
     user = update.effective_user
 
     if session.add_player(user):
-        await update.message.reply_text(f"{user.first_name} berhasil join game.")
+        update.message.reply_text(f"{user.first_name} berhasil join game.")
     else:
-        await update.message.reply_text(f"{user.first_name} sudah terdaftar sebelumnya.")
+        update.message.reply_text(f"{user.first_name} sudah terdaftar sebelumnya.")
 
 
-async def status_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def status_game(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     session = get_session(chat_id)
 
     if not session.players:
-        await update.message.reply_text("Belum ada pemain. Gunakan /join terlebih dahulu.")
+        update.message.reply_text("Belum ada pemain. Gunakan /join terlebih dahulu.")
         return
 
     names = [info["name"] for info in session.players.values()]
     text = "Daftar pemain:\n- " + "\n- ".join(names)
     if session.started and session.spy_id:
         text += f"\n\nRonde aktif: {session.round}."
-    await update.message.reply_text(text)
+    update.message.reply_text(text)
 
 
-async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start_game(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     session = get_session(chat_id)
 
     if not session.players:
-        await update.message.reply_text("Belum ada pemain. Ketik /join dulu.")
+        update.message.reply_text("Belum ada pemain. Ketik /join dulu.")
         return
 
     if len(session.players) < 3:
-        await update.message.reply_text("Minimal 3 pemain untuk memulai round.")
+        update.message.reply_text("Minimal 3 pemain untuk memulai round.")
         return
 
     result = session.start_round()
     if isinstance(result, str):
-        await update.message.reply_text(result)
+        update.message.reply_text(result)
         return
 
-    await update.message.reply_text(
+    update.message.reply_text(
         f"Ronde {session.round} dimulai! Spy sudah dipilih. Kata rahasia dikirim ke DM masing-masing pemain."
     )
 
     for user_id, message in result:
         try:
-            await context.bot.send_message(chat_id=user_id, text=message)
+            context.bot.send_message(chat_id=user_id, text=message)
         except Exception:
             pass
 
 
-async def vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def vote(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     session = get_session(chat_id)
 
     if not session.started:
-        await update.message.reply_text("Belum ada ronde yang aktif.")
+        update.message.reply_text("Belum ada ronde yang aktif.")
         return
 
     if not update.message.reply_to_message:
-        await update.message.reply_text("Balas pesan orang yang kamu duga sebagai spy, lalu ketik /vote.")
+        update.message.reply_text("Balas pesan orang yang kamu duga sebagai spy, lalu ketik /vote.")
         return
 
     target_user = update.message.reply_to_message.from_user
     if target_user is None:
-        await update.message.reply_text("Target tidak valid.")
+        update.message.reply_text("Target tidak valid.")
         return
 
     if target_user.id not in session.players:
-        await update.message.reply_text("Target vote harus merupakan pemain yang ikut game.")
+        update.message.reply_text("Target vote harus merupakan pemain yang ikut game.")
         return
 
     result = session.vote(update.effective_user.id, target_user.id)
-    await update.message.reply_text(result)
+    update.message.reply_text(result)
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text(
         "Aturan singkat Who's the Spy:\n\n"
         "- Semua pemain mendapat kata rahasia yang sama kecuali 1 orang sebagai spy.\n"
         "- Spy tidak diberi kata rahasia, hanya tahu ia adalah spy.\n"
@@ -213,25 +213,25 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def main():
+def main():
     if not TOKEN:
         raise ValueError("Token Bot Telegram belum diatur. Isi TELEGRAM_BOT_TOKEN di file .env")
 
-    app = Application.builder().token(TOKEN).build()
+    updater = Updater(TOKEN)
+    dispatcher = updater.dispatcher
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("newgame", new_game))
-    app.add_handler(CommandHandler("join", join_game))
-    app.add_handler(CommandHandler("status", status_game))
-    app.add_handler(CommandHandler("startgame", start_game))
-    app.add_handler(CommandHandler("vote", vote))
-    app.add_handler(CommandHandler("help", help_command))
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("newgame", new_game))
+    dispatcher.add_handler(CommandHandler("join", join_game))
+    dispatcher.add_handler(CommandHandler("status", status_game))
+    dispatcher.add_handler(CommandHandler("startgame", start_game))
+    dispatcher.add_handler(CommandHandler("vote", vote))
+    dispatcher.add_handler(CommandHandler("help", help_command))
 
-    print("Bot sedang berjalan...")
-    await app.run_polling()
+    print("Bot Who's the Spy sedang berjalan...")
+    updater.start_polling()
+    updater.idle()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
-
+    main()
