@@ -5,6 +5,8 @@ from collections import Counter
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+import asyncio
+import sys
 
 load_dotenv()
 
@@ -213,7 +215,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def main():
+def main():
     if not TOKEN:
         raise ValueError("Token Bot Telegram belum diatur. Isi TELEGRAM_BOT_TOKEN di file .env")
 
@@ -228,12 +230,10 @@ async def main():
     app.add_handler(CommandHandler("help", help_command))
 
     print("Bot Who's the Spy sedang berjalan...")
-    await app.run_polling()
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    import asyncio
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nBot dihentikan.")
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    main()
